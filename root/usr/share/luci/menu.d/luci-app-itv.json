@@ -1,0 +1,13 @@
+{
+	"admin/services/itv": {
+		"title": "iTV Channel Sources",
+		"order": 30,
+		"action": {
+			"type": "view",
+			"path": "itv/tv"
+		},
+		"depends": {
+			"acl": [ "luci-app-itv" ]
+		}
+	}
+}

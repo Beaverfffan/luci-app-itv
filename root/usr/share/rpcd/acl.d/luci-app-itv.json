@@ -1,0 +1,21 @@
+{
+	"luci-app-itv": {
+		"description": "Grant access to the iTV channel source files",
+		"read": {
+			"file": {
+				"/www/tv1": [ "read" ],
+				"/www/tv2": [ "read" ],
+				"/www/tv3": [ "read" ],
+				"/www/tv4": [ "read" ]
+			}
+		},
+		"write": {
+			"file": {
+				"/www/tv1": [ "write" ],
+				"/www/tv2": [ "write" ],
+				"/www/tv3": [ "write" ],
+				"/www/tv4": [ "write" ]
+			}
+		}
+	}
+}
