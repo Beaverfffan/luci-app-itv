@@ -92,6 +92,24 @@ jobs:
           echo "FORMAT=${{ matrix.format }}" >> "$GITHUB_ENV"
           echo "VARIANT=${{ matrix.name }}" >> "$GITHUB_ENV"
 
+      - name: Inspect payload (format-agnostic)
+        working-directory: ${{ github.workspace }}/sdk
+        run: |
+          set -uo pipefail
+          echo "--- files staged for packaging ---"
+          find build_dir -path '*luci-app-itv*' -type f 2>/dev/null \
+            | sed "s|$PWD/||" | sort | head -n 60
+
+          echo
+          echo "--- archive listing attempt (informational) ---"
+          APK=./staging_dir/host/bin/apk
+          for f in "$GITHUB_WORKSPACE"/out/*; do
+            echo "== $(basename "$f")"
+            [ -x "$APK" ] && { "$APK" info --contents "$f" 2>&1 | head -n 40 || true; }
+            tar -tzf "$f" 2>/dev/null | head -n 40 || true
+          done
+          exit 0
+
       - name: Rename with variant and format
         run: |
           set -euo pipefail
