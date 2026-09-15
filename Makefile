@@ -1,7 +1,10 @@
 #
-# Copyright (C) 2026 Beaverfffan
+# Refactored Lua CBI implementation of luci-app-itv.
 #
-# This is free software, licensed under the Apache License, Version 2.0 .
+# The original luci-app-itv 1.2 package carried no licence metadata, so the
+# licence status of this derivative work is UNKNOWN -- no licence is granted
+# here and the original author's terms, whatever they may be, continue to
+# apply.  Deliberately no PKG_LICENSE: see README.md "Provenance / licensing".
 #
 
 include $(TOPDIR)/rules.mk
@@ -10,7 +13,6 @@ PKG_NAME:=luci-app-itv
 PKG_VERSION:=1.3
 PKG_RELEASE:=20260915
 
-PKG_LICENSE:=Apache-2.0
 PKG_MAINTAINER:=Beaverfffan
 
 LUCI_TITLE:=iTV channel source manager (refactored Lua / CBI)

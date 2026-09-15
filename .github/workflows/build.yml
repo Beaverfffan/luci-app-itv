@@ -1,0 +1,145 @@
+name: Build packages
+
+# Builds the three variants (main = JS, lua, original) against both the stable
+# apk-based SDK and the last ipk-based SDK, so the same release serves
+# OpenWrt 25.x and 24.10 alike.
+#
+# Trigger:
+#   * manually, from the Actions tab (optionally creating a release)
+#   * by pushing a v* tag, which also publishes a GitHub release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Create a release with this tag (leave empty to only build artifacts)'
+        required: false
+        default: ''
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: ${{ matrix.name }} / openwrt-${{ matrix.sdk }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: js,       ref: main,     sdk: '25.12.5', format: apk }
+          - { name: lua,      ref: lua,      sdk: '25.12.5', format: apk }
+          - { name: original, ref: original, sdk: '25.12.5', format: apk }
+          - { name: js,       ref: main,     sdk: '24.10.8', format: ipk }
+          - { name: lua,      ref: lua,      sdk: '24.10.8', format: ipk }
+          - { name: original, ref: original, sdk: '24.10.8', format: ipk }
+
+    steps:
+      - name: Checkout ${{ matrix.ref }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.ref }}
+          path: pkg
+
+      - name: Fetch OpenWrt SDK ${{ matrix.sdk }}
+        run: |
+          set -euo pipefail
+          BASE="https://downloads.openwrt.org/releases/${{ matrix.sdk }}/targets/x86/64/"
+          FILE=$(curl -fsSL "$BASE" \
+                 | grep -oE 'openwrt-sdk-[^"<>]*\.tar\.zst' \
+                 | head -n1 | tr -d '\r')
+          echo "SDK tarball: $FILE"
+          test -n "$FILE"
+          curl -fsSL "$BASE$FILE" -o /tmp/sdk.tar.zst
+          mkdir -p "$GITHUB_WORKSPACE/sdk"
+          tar -xaf /tmp/sdk.tar.zst -C "$GITHUB_WORKSPACE/sdk" --strip-components=1
+          echo "--- SDK top level ---"
+          ls "$GITHUB_WORKSPACE/sdk" | head -n 20
+
+      - name: Build luci-app-itv
+        working-directory: ${{ github.workspace }}/sdk
+        run: |
+          set -euo pipefail
+          mkdir -p package/luci-app-itv
+          cp -a "$GITHUB_WORKSPACE/pkg/." package/luci-app-itv/
+          echo "--- package contents ---"
+          ls -A package/luci-app-itv
+
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+          echo 'CONFIG_PACKAGE_luci-app-itv=m' >> .config
+          make defconfig
+
+          make package/luci-app-itv/compile V=s -j"$(nproc)"
+
+      - name: Collect packages
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          find "$GITHUB_WORKSPACE/sdk/bin/packages" -type f \
+               \( -name 'luci-app-itv*' \) -exec cp -v {} out/ \;
+          echo "--- collected ---"
+          ls -la out/
+          test -n "$(ls -A out)"
+          echo "FORMAT=${{ matrix.format }}" >> "$GITHUB_ENV"
+          echo "VARIANT=${{ matrix.name }}" >> "$GITHUB_ENV"
+
+      - name: Rename with variant and format
+        run: |
+          set -euo pipefail
+          cd out
+          for f in *; do
+            ext="${f##*.}"
+            base="${f%.*}"
+            mv -v "$f" "${base}-${VARIANT}.${ext}"
+          done
+          ls -la
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: luci-app-itv-${{ matrix.name }}-${{ matrix.format }}-${{ matrix.sdk }}
+          path: out/*
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: Publish release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.tag != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Flatten
+        run: |
+          set -euo pipefail
+          mkdir -p rel
+          find dist -type f -exec cp -v {} rel/ \;
+          echo "--- release assets ---"
+          ls -la rel/
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1 \
+            && gh release upload "$TAG" rel/* --clobber --repo "$REPO" \
+            || gh release create "$TAG" rel/* \
+                 --repo "$REPO" \
+                 --title "$TAG" \
+                 --generate-notes
